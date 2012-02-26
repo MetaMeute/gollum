@@ -23,6 +23,7 @@ module Gollum
     ATTRIBUTES = {
       'a'   => ['href'],
       'img' => ['src'],
+      'iframe' => ['src', 'frameborder', 'allowfullscreen'],
       :all  => ['abbr', 'accept', 'accept-charset',
                 'accesskey', 'action', 'align', 'alt', 'axis',
                 'border', 'cellpadding', 'cellspacing', 'char',
