@@ -15,7 +15,8 @@ module Gollum
       'ol', 'optgroup', 'option', 'p', 'pre', 'q', 's', 'samp',
       'select', 'small', 'span', 'strike', 'strong', 'sub',
       'sup', 'table', 'tbody', 'td', 'textarea', 'tfoot', 'th',
-      'thead', 'tr', 'tt', 'u', 'ul', 'var'
+      'thead', 'tr', 'tt', 'u', 'ul', 'var', 'iframe', 'audio',
+      'video'
     ].freeze
 
     # Default whitelisted attributes.
