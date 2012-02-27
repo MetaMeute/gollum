@@ -63,8 +63,9 @@ utility, you can run it like so:
 
 A Gollum repository's contents are designed to be human editable. Page content
 is written in `page files` and may be organized into directories any way you
-choose. Special footers can be created in `footer files`. Other content
-(images, PDFs, etc) may also be present and organized in the same way.
+choose. Special footers and headers can be created in `footer files` or `header
+files`. Other content (images, PDFs, etc) may also be present and organized in
+the same way.
 
 
 ## PAGE FILES
@@ -104,6 +105,13 @@ Sidebar files allow you to add a simple sidebar to your wiki.  Sidebar files
 are named `_Sidebar.ext` where the extension is one of the supported formats.
 Sidebars affect all pages in their directory and any subdirectories that do not
 have a sidebar file of their own.
+
+## HEADER FILES
+
+Header files allow you to add a simple header to your wiki. Header files must
+be named `_Header.ext` where the extension is one of the supported formats.
+Like sidebars, headers affect all pages in their directory and any
+subdirectories that do not have a header file of their own.
 
 ## FOOTER FILES
 

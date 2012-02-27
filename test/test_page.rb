@@ -108,10 +108,29 @@ context "Page" do
 
   test "footer itself" do
     footer = @wiki.page("_Footer")
+    assert_nil footer.header
     assert_nil footer.footer
     assert_nil footer.sidebar
   end
 
+  test "top level header" do
+    header = @wiki.page('Home').header
+    assert_equal 'Lord of the Rings wiki', header.raw_data
+    assert_equal '_Header.md', header.path
+  end
+
+  test "nested header" do
+    header = @wiki.page('Eye Of Sauron').header
+    assert_equal "Ones does not simply **walk** into Mordor!\n", header.raw_data
+    assert_equal "Mordor/_Header.md", header.path
+  end
+
+  test "header itself" do
+    header = @wiki.page("_Header")
+    assert_nil header.header
+    assert_nil header.footer
+    assert_nil header.sidebar
+  end
   test "top level sidebar" do
     sidebar = @wiki.page('Home').sidebar
     assert_equal 'Lord of the Rings wiki', sidebar.raw_data
@@ -126,6 +145,7 @@ context "Page" do
 
   test "sidebar itself" do
     sidebar = @wiki.page("_Sidebar")
+    assert_nil sidebar.header
     assert_nil sidebar.footer
     assert_nil sidebar.sidebar
   end
