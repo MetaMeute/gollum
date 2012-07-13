@@ -1,6 +1,8 @@
 gollum -- A wiki built on top of Git
 ====================================
 
+[![Build Status](https://secure.travis-ci.org/github/gollum.png?branch=master)](http://travis-ci.org/github/gollum)
+
 ## DESCRIPTION
 
 Gollum is a simple wiki system built on top of Git that powers GitHub Wikis.
@@ -26,15 +28,16 @@ The best way to install Gollum is with RubyGems:
 If you're installing from source, you can use [Bundler][bundler] to pick up all the
 gems:
 
-    $ bundle install # ([more info](http://gembundler.com/bundle_install.html))
+    $ bundle install
 
 In order to use the various formats that Gollum supports, you will need to
 separately install the necessary dependencies for each format. You only need
 to install the dependencies for the formats that you plan to use.
 
-* [ASCIIDoc](http://www.methods.co.nz/asciidoc/) -- `brew install asciidoc`
+* [ASCIIDoc](http://www.methods.co.nz/asciidoc/) -- `brew install asciidoc` on mac or `apt-get install -y asciidoc` on Ubuntu
 * [Creole](http://wikicreole.org/) -- `gem install creole`
-* [Markdown](http://daringfireball.net/projects/markdown/) -- `gem install rdiscount`
+* [Markdown](http://daringfireball.net/projects/markdown/) -- `gem install redcarpet`
+* [GitHub Flavored Markdown](http://github.github.com/github-flavored-markdown/) -- `gem install github-markdown`
 * [Org](http://orgmode.org/) -- `gem install org-ruby`
 * [Pod](http://search.cpan.org/dist/perl/pod/perlpod.pod) -- `Pod::Simple::HTML` comes with Perl >= 5.10. Lower versions should install Pod::Simple from CPAN.
 * [RDoc](http://rdoc.sourceforge.net/)
@@ -58,6 +61,7 @@ utility, you can run it like so:
 
     $ gollum --help
 
+Note that the gollum server will not run on Windows because of [an issue](https://github.com/rtomayko/posix-spawn/issues/9) with posix-spawn (which is used by Grit).
 
 ## REPO STRUCTURE
 
@@ -119,7 +123,6 @@ Footer files allow you to add a simple footer to your wiki. Footer files must
 be named `_Footer.ext` where the extension is one of the supported formats.
 Like sidebars, footers affect all pages in their directory and any
 subdirectories that do not have a footer file of their own.
-
 
 ## HTML SANITIZATION
 
@@ -289,6 +292,22 @@ wiki page, simply preface the link with a single quote (like in LISP):
 
 This is useful for writing about the link syntax in your wiki pages.
 
+## TABLE OF CONTENTS
+
+Gollum has a special tag to insert a table of contents (new in v2.1)
+
+    '[[_TOC_]]
+
+This tag is case sensitive, use all upper case.  The TOC tag can be inserted
+into the `_Header`, `_Footer` or `_Sidebar` files too.
+
+There is also a wiki option `:universal_toc` which will display a
+table of contents at the top of all your wiki pages if it is enabled.
+The `:universal_toc` is not enabled by default.  To set the option,
+add the option to the `:wiki_options` hash before starting the
+frontend app:
+
+    Precious::App.set(:wiki_options, {:universal_toc => true})
 
 ## SYNTAX HIGHLIGHTING
 
@@ -302,20 +321,22 @@ separately) by using the following syntax:
       end
     ```
 
-The block must start with three backticks (as the first characters on the
-line). After that comes the name of the language that is contained by the
+The block must start with three backticks, at the beginning of a line or
+indented with any number of spaces or tabs.
+After that comes the name of the language that is contained by the
 block. The language must be one of the `short name` lexer strings supported by
 Pygments. See the [list of lexers](http://pygments.org/docs/lexers/) for valid
 options.
 
-If the block contents are indented two spaces or one tab, then that whitespace
-will be ignored (this makes the blocks easier to read in plaintext).
+The block contents should be indented at the same level than the opening backticks.
+If the block contents are indented with an additional two spaces or one tab,
+then that whitespace will be ignored (this makes the blocks easier to read in plaintext).
 
-The block must end with three backticks as the first characters on a
-line.
-
+The block must end with three backticks indented at the same level than the opening
+backticks.
 
 ## MATHEMATICAL EQUATIONS
+
 
 Page files may contain mathematic equations in TeX syntax that will be nicely
 typeset into the expected output. A block-style equation is delimited by `\[`
@@ -328,6 +349,26 @@ inline with regular text. For example:
 
     The Pythagorean theorem is \( a^2 + b^2 = c^2 \).
 
+### INSTALLATION REQUIREMENTS
+
+In order to get the mathematical equations rendering to work, you need the following binaries:
+
+* LaTex, TeTex or MacTex/BasicTeX (pdflatex)
+* Netpbm (pnmcrop, pnmpad, pnmscale, ppmtopgm, pnmgamma, pnmtopng)
+* Ghostscript (gs)
+
+## SEQUENCE DIAGRAMS
+
+You may imbed sequence diagrams into your wiki page (rendered by
+[WebSequenceDiagrams](http://www.websequencediagrams.com) by using the
+following syntax:
+
+    {{{ blue-modern
+      alice->bob: Test
+      bob->alice: Test response
+    }}}
+
+You can replace the string "blue-modern" with any supported style.
 
 ## API DOCUMENTATION
 
@@ -375,6 +416,11 @@ Get the latest version of the given human or canonical page name:
 Get the footer (if any) for a given page:
 
     page.footer
+    # => <Gollum::Page>
+    
+Get the header (if any) for a given page:
+
+    page.header
     # => <Gollum::Page>
 
 Get a list of versions for a given page:
@@ -436,6 +482,24 @@ To delete a page and commit the change:
 
     wiki.delete_page(page, commit)
 
+### RACK
+
+You can also run gollum with any rack-compatible server by placing this config.ru
+file inside your wiki repository. This allows you to utilize any Rack middleware
+like Rack::Auth, OmniAuth, etc.
+
+    #!/usr/bin/env ruby
+    require 'rubygems'
+    require 'gollum/frontend/app'
+
+    gollum_path = File.expand_path(File.dirname(__FILE__)) # CHANGE THIS TO POINT TO YOUR OWN WIKI REPO
+    Precious::App.set(:gollum_path, gollum_path)
+    Precious::App.set(:default_markup, :markdown) # set your favorite markup language
+    Precious::App.set(:wiki_options, {:universal_toc => false})
+    run Precious::App
+
+## Windows Filename Validation
+Note that filenames on windows must not contain any of the following characters `\ / : * ? " < > |`. See [this support article](http://support.microsoft.com/kb/177506) for details.
 
 ## CONTRIBUTE
 
@@ -455,3 +519,16 @@ your changes merged back into core is as follows:
 1. If necessary, rebase your commits into logical chunks, without errors
 1. Push the branch up to GitHub
 1. Send a pull request to the github/gollum project.
+
+## RELEASING
+
+    $ rake gemspec
+    $ gem build gollum.gemspec
+    $ gem push gollum-X.Y.Z.gem
+    
+## BUILDING THE GEM FROM MASTER
+    $ gem uninstall -aix gollum
+    $ git clone https://github.com/github/gollum.git
+    $ cd gollum
+    gollum$ rake build
+    gollum$ gem install pkg/gollum*.gem

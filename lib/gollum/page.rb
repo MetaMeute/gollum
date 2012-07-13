@@ -20,6 +20,11 @@ module Gollum
     # Returns nothing.
     attr_writer :historical
 
+    # Parent page if this is a sub page
+    #
+    # Returns a Page
+    attr_accessor :parent_page
+
     # Checks if a filename has a valid extension understood by GitHub::Markup.
     #
     # filename - String filename, like "Home.md".
@@ -76,11 +81,20 @@ module Gollum
     end
 
     # Reusable filter to turn a filename (without path) into a canonical name.
-    # Strips extension, converts spaces to dashes.
+    # Strips extension, converts dashes to spaces.
     #
     # Returns the filtered String.
     def self.canonicalize_filename(filename)
-      filename.split('.')[0..-2].join('.').gsub('-', ' ')
+      strip_filename(filename).gsub('-', ' ')
+    end
+
+    # Reusable filter to strip extension and path from filename
+    #
+    # filename - The string path or filename to strip
+    #
+    # Returns the stripped String.
+    def self.strip_filename(filename)
+      ::File.basename(filename, ::File.extname(filename))
     end
 
     # Public: Initialize a page.
@@ -90,7 +104,9 @@ module Gollum
     # Returns a newly initialized Gollum::Page.
     def initialize(wiki)
       @wiki = wiki
-      @blob = @footer = @header = @sidebar = nil
+      @blob = @header = @footer = @sidebar = nil
+      @doc = nil
+      @parent_page = nil
     end
 
     # Public: The on-disk filename of the page including extension.
@@ -98,6 +114,13 @@ module Gollum
     # Returns the String name.
     def filename
       @blob && @blob.name
+    end
+
+    # Public: The on-disk filename of the page with extension stripped.
+    #
+    # Returns the String name.
+    def filename_stripped
+      self.class.strip_filename(filename)
     end
 
     # Public: The canonical page name without extension, and dashes converted
@@ -108,41 +131,48 @@ module Gollum
       self.class.canonicalize_filename(filename)
     end
 
-    # Public: If the first element of a formatted page is an <h1> tag it can
-    # be considered the title of the page and used in the display. If the
-    # first element is NOT an <h1> tag, the title will be constructed from the
+    # Public: The title will be constructed from the
     # filename by stripping the extension and replacing any dashes with
     # spaces.
     #
     # Returns the fully sanitized String title.
     def title
-      doc = Nokogiri::HTML(%{<div id="gollum-root">} + self.formatted_data + %{</div>})
+      Sanitize.clean(name).strip
+    end
 
-      header =
-      case self.format
-        when :asciidoc
-          doc.css("div#gollum-root > div#header > h1:first-child")
-        when :org
-          doc.css("div#gollum-root > p.title:first-child")
-        when :pod
-          doc.css("div#gollum-root > a.dummyTopAnchor:first-child + h1")
-        when :rest
-          doc.css("div#gollum-root > div > div > h1:first-child")
-        else
-          doc.css("div#gollum-root > h1:first-child")
-      end
-
-      if !header.empty?
-        Sanitize.clean(header.to_html)
-      else
-        Sanitize.clean(name)
-      end.strip
+    # Public: Determines if this is a sub-page
+    # Sub-pages have filenames beginning with an underscore
+    #
+    # Returns true or false.
+    def sub_page
+      filename =~ /^_/
     end
 
     # Public: The path of the page within the repo.
     #
     # Returns the String path.
     attr_reader :path
+
+    # Public: The url path required to reach this page within the repo.
+    #
+    # Returns the String url_path
+    def url_path
+      path = if self.path.include?('/')
+        self.path.sub(/\/.+$/, '/')
+      else
+        ''
+      end
+
+      path << Page.cname(self.name, '-', '-')
+      path
+    end
+
+    # Public: The url_path, but CGI escaped.
+    #
+    # Returns the String url_path
+    def escaped_url_path
+      CGI.escape(self.url_path).gsub('%2F','/')
+    end
 
     # Public: The raw contents of the page.
     #
@@ -166,9 +196,25 @@ module Gollum
 
     # Public: The formatted contents of the page.
     #
+    # encoding - Encoding Constant or String.
+    #
     # Returns the String data.
-    def formatted_data(&block)
-      @blob && markup_class.render(historical?, &block)
+    def formatted_data(encoding = nil, &block)
+      @blob && markup_class.render(historical?, encoding) do |doc|
+        @doc = doc
+        yield doc if block_given?
+      end
+    end
+
+    # Public: The table of contents of the page.
+    #
+    # formatted_data - page already marked up in html.
+    #
+    # Returns the String data.
+    def toc_data()
+      return @parent_page.toc_data if @parent_page and @sub_page
+      formatted_data if markup_class.toc == nil
+      markup_class.toc
     end
 
     # Public: The format of the page.
@@ -251,17 +297,22 @@ module Gollum
 
     # Convert a human page name into a canonical page name.
     #
-    # name - The String human page name.
+    # name           - The String human page name.
+    # char_white_sub - Substitution for whitespace
+    # char_other_sub - Substitution for other special chars
     #
     # Examples
     #
     #   Page.cname("Bilbo Baggins")
     #   # => 'Bilbo-Baggins'
     #
+    #   Page.cname("Bilbo Baggins",'_')
+    #   # => 'Bilbo_Baggins'
+    #
     # Returns the String canonical name.
-    def self.cname(name)
-      name.respond_to?(:gsub)      ?
-        name.gsub(%r{[ /<>]}, '-') :
+    def self.cname(name, char_white_sub = '-', char_other_sub = '-')
+      name.respond_to?(:gsub) ?
+        name.gsub(%r{\s},char_white_sub).gsub(%r{[/<>+]}, char_other_sub) :
         ''
     end
 
@@ -375,14 +426,17 @@ module Gollum
     # Returns a Boolean.
     def page_match(name, filename)
       if match = self.class.valid_filename?(filename)
-        Page.cname(name).downcase == Page.cname(match).downcase
-      else
-        false
+        @wiki.ws_subs.each do |sub|
+          return true if Page.cname(name).downcase == Page.cname(match, sub).downcase
+        end
       end
+      false
     end
 
-    # Loads a sub page.  Sub page nanes (footers) are prefixed with
-    # an underscore to distinguish them from other Pages.
+    # Loads a sub page.  Sub page names (footers, headers, sidebars) are prefixed with
+    # an underscore to distinguish them from other Pages. If there is not one within
+    # the current directory, starts walking up the directory tree to try and find one
+    # within parent directories.
     #
     # name - String page name.
     #
@@ -395,15 +449,19 @@ module Gollum
 
       dirs = self.path.split('/')
       dirs.pop
-      map = @wiki.tree_map_for(self.version.id)
+      map = @wiki.tree_map_for(@wiki.ref, true)
       while !dirs.empty?
         if page = find_page_in_tree(map, name, dirs.join('/'))
+          page.parent_page = self
           return page
         end
         dirs.pop
       end
 
-      find_page_in_tree(map, name, '')
+      if page = find_page_in_tree(map, name, '')
+        page.parent_page = self
+      end
+      page
     end
 
     def inspect

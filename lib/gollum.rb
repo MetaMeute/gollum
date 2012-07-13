@@ -15,12 +15,18 @@ require File.expand_path('../gollum/blob_entry', __FILE__)
 require File.expand_path('../gollum/wiki', __FILE__)
 require File.expand_path('../gollum/page', __FILE__)
 require File.expand_path('../gollum/file', __FILE__)
+require File.expand_path('../gollum/file_view', __FILE__)
 require File.expand_path('../gollum/markup', __FILE__)
 require File.expand_path('../gollum/sanitization', __FILE__)
 require File.expand_path('../gollum/tex', __FILE__)
+require File.expand_path('../gollum/web_sequence_diagram', __FILE__)
 
 module Gollum
-  VERSION = '1.3.1'
+  VERSION = '2.1.0'
+
+  def self.assets_path
+    ::File.expand_path('gollum/frontend/public', ::File.dirname(__FILE__))
+  end
 
   class Error < StandardError; end
 
