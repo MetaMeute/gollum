@@ -7,6 +7,8 @@ module Gollum
 
   class Markup
     attr_accessor :toc
+    attr_reader   :metadata
+
     # Initialize a new Markup object.
     #
     # page - The Gollum::Page.
@@ -27,6 +29,7 @@ module Gollum
       @wsdmap  = {}
       @premap  = {}
       @toc = nil
+      @metadata = nil
     end
 
     # Render the content with Gollum wiki syntax on top of the file's own
@@ -43,6 +46,7 @@ module Gollum
         @wiki.sanitizer
 
       data = @data.dup
+      data = extract_metadata(data)
       data = extract_code(data)
       data = extract_tex(data)
       data = extract_wsd(data)
@@ -399,7 +403,7 @@ module Gollum
           link_name = @wiki.page_class.cname(page.name)
           presence  = "present"
         end
-        link = ::File.join(@wiki.base_path, CGI.escape(link_name))
+        link = ::File.join(@wiki.base_path, page ? page.escaped_url_path : CGI.escape(link_name))
         %{<a class="internal #{presence}" href="#{link}#{extra}">#{name}</a>}
       end
     end
@@ -459,11 +463,12 @@ module Gollum
     # Returns the placeholder'd String data.
     def extract_code(data)
       data.gsub!(/^([ \t]*)``` ?([^\r\n]+)?\r?\n(.+?)\r?\n\1```\r?$/m) do
-        id     = Digest::SHA1.hexdigest("#{$2}.#{$3}")
+        lang   = $2 ? $2.strip : nil
+        id     = Digest::SHA1.hexdigest("#{lang}.#{$3}")
         cached = check_cache(:code, id)
         @codemap[id] = cached   ?
           { :output => cached } :
-          { :lang => $2, :code => $3, :indent => $1 }
+          { :lang => lang, :code => $3, :indent => $1 }
         "#{$1}#{id}" # print the SHA1 ID with the proper indentation
       end
       data
@@ -503,15 +508,17 @@ module Gollum
         blocks << [spec[:lang], code]
       end
 
-      highlighted = begin
+      highlighted = []
+      blocks.each do |lang, code|
         encoding ||= 'utf-8'
-        blocks.map { |lang, code|
-          Pygments.highlight(code, :lexer => lang, :options => {:encoding => encoding.to_s})
-        }
-      rescue ::RubyPython::PythonError
-        []
+        begin
+          hl_code = Pygments.highlight(code, :lexer => lang, :options => {:encoding => encoding.to_s})
+        rescue ::RubyPython::PythonError
+          hl_code = code
+        end
+        highlighted << hl_code
       end
-
+      
       @codemap.each do |id, spec|
         body = spec[:output] || begin
           if (body = highlighted.shift.to_s).size > 0
@@ -560,6 +567,29 @@ module Gollum
         data.gsub!(id, Gollum::WebSequenceDiagram.new(code, style).to_tag)
       end
       data
+    end
+
+    #########################################################################
+    #
+    # Metadata
+    #
+    #########################################################################
+
+    # Extract metadata for data and build metadata table. Metadata
+    # is content found between `<!-- ---` and `-->` markers, and must
+    # be a valid YAML mapping.
+    #
+    # Returns the String of formatted data with metadata removed.
+    def extract_metadata(data)
+      @metadata ||= {}
+      data.gsub(/\<\!--+\s+---(.*?)--+\>/m) do
+        yaml = @wiki.sanitizer.clean($1)
+        hash = YAML.load(yaml)
+        if Hash === hash
+          @metadata.update(hash)
+        end
+        ''
+      end
     end
 
     # Hook for getting the formatted value of extracted tag data.

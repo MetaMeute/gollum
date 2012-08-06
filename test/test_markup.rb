@@ -6,6 +6,7 @@ context "Markup" do
     @path = testpath("examples/test.git")
     FileUtils.rm_rf(@path)
     Grit::Repo.init_bare(@path)
+    Gollum::Wiki.default_options = {:universal_toc => false}
     @wiki = Gollum::Wiki.new(@path)
   end
 
@@ -173,7 +174,26 @@ context "Markup" do
     @wiki.write_page("Potato", :mediawiki, "a [[Potato|Potato Heaad]] ", commit_details)
     page = @wiki.page("Potato")
     output = page.formatted_data
-    assert_equal normal("<p>\na <a class=\"internal present\" href=\"/Potato\">Potato Heaad</a> </p>"), normal(output)
+    assert_equal normal("<p>\na <a class=\"internal present\" href=\"/Potato\">Potato Heaad</a> </p>
+"), normal(output)
+  end
+
+  test "wiki link within inline code block" do
+    @wiki.write_page("Potato", :markdown, "`sed -i '' 's/[[:space:]]*$//'`", commit_details)
+    page = @wiki.page("Potato")
+    assert_equal "<p><code>sed -i '' 's/[[:space:]]*$//'</code></p>", page.formatted_data
+  end
+
+  test "wiki link within code block" do
+    @wiki.write_page("Potato", :markdown, "    sed -i '' 's/[[:space:]]*$//'", commit_details)
+    page = @wiki.page("Potato")
+    assert_equal "<pre><code>sed -i '' 's/[[:space:]]*$//'\n</code></pre>", page.formatted_data
+  end
+
+  test "piped wiki link within code block" do
+    @wiki.write_page("Potato", :markdown, "`make a link [[home|sweet home]]`", commit_details)
+    page = @wiki.page("Potato")
+    assert_equal "<p><code>make a link [[home|sweet home]]</code></p>", page.formatted_data
   end
 
   #########################################################################
@@ -422,6 +442,28 @@ context "Markup" do
     compare(content, output)
   end
 
+  test "code blocks with multibyte caracters indent" do
+    content = "a\n\n```ruby\ns = 'やくしまるえつこ'\n```\n\nb"
+    output = "<p>a</p>\n\n<div class=\"highlight\">\n<pre><span class=\"n\">" +
+             "s</span> <span class=\"o\">=</span> <span class=\"s1\">'やくしまるえつこ'" +
+             "</span>\n</pre>\n</div>\n\n\n<p>b</p>"
+    index = @wiki.repo.index
+    index.add("Bilbo-Baggins.md", content)
+    index.commit("Add alpha.jpg")
+
+    page = @wiki.page("Bilbo Baggins")
+    rendered = Gollum::Markup.new(page).render(false, 'utf-8')
+    assert_equal output, rendered
+  end
+
+  test "code blocks with ascii characters" do
+    content = "a\n\n```\n├─foo\n```\n\nb"
+    output = "<p>a</p>\n\n<div class=\"highlight\"><pre>" +
+             "├─<span class=\"n\">foo</span>" +
+             "\n</pre>\n</div>\n\n<p>b</p>"
+    compare(content, output)
+  end
+
   test "code with wiki links" do
     content = <<-END
 booya
@@ -434,17 +476,96 @@ np.array([[2,2],[1,3]],np.float)
     # rendered with Gollum::Markup
     page, rendered = render_page(content)
     assert_markup_highlights_code Gollum::Markup, rendered
+  end
 
-    if Gollum.const_defined?(:MarkupGFM)
-      rendered_gfm = Gollum::MarkupGFM.new(page).render
-      assert_markup_highlights_code Gollum::MarkupGFM, rendered_gfm
-    end
+  test "code with trailing whitespace" do
+    content = <<-END
+shoop da woop
+
+``` python 
+np.array([[2,2],[1,3]],np.float)
+```
+    END
+
+    # rendered with Gollum::Markup
+    page, rendered = render_page(content)
+    assert_markup_highlights_code Gollum::Markup, rendered
   end
 
   def assert_markup_highlights_code(markup_class, rendered)
     assert_match /div class="highlight"/, rendered, "#{markup_class} doesn't highlight code\n #{rendered}"
     assert_match /span class="n"/, rendered, "#{markup_class} doesn't highlight code\n #{rendered}"
     assert_match /\(\[\[/, rendered, "#{markup_class} parses out wiki links\n#{rendered}"
+  end
+
+  #########################################################################
+  #
+  # Web Sequence Diagrams
+  #
+  #########################################################################
+
+  test "sequence diagram blocks" do
+    content = "a\n\n{{{{{{default\nalice->bob: Test\n}}}}}}\n\nb"
+    output = /.*<img src="http:\/\/www\.websequencediagrams\.com\/\?img=\w{9}" \/>.*/
+
+    index = @wiki.repo.index
+    index.add("Bilbo-Baggins.md", content)
+    index.commit("Add sequence diagram")
+
+    page = @wiki.page("Bilbo Baggins")
+    rendered = Gollum::Markup.new(page).render
+    assert_not_nil rendered.match(output)
+  end
+
+  #########################################################################
+  #
+  # Metadata Blocks
+  #
+  #########################################################################
+
+  test "metadata blocks" do
+    content = "a\n\n<!-- ---\ntags: [foo, bar]\n-->\n\nb"
+    output = "<p>a</p>\n\n<p>b</p>"
+    result = {'tags'=>['foo','bar']}
+
+    index = @wiki.repo.index
+    index.add("Bilbo-Baggins.md", content)
+    index.commit("Add metadata")
+
+    page = @wiki.page("Bilbo Baggins")
+    rendered = Gollum::Markup.new(page).render
+    assert_equal output, rendered 
+    assert_equal result, page.meta_data
+  end
+
+  test "metadata blocks with newline" do
+    content = "a\n\n<!--\n---\ntags: [foo, bar]\n-->\n\nb"
+    output = "<p>a</p>\n\n<p>b</p>"
+    result = {'tags'=>['foo','bar']}
+
+    index = @wiki.repo.index
+    index.add("Bilbo-Baggins.md", content)
+    index.commit("Add metadata")
+
+    page = @wiki.page("Bilbo Baggins")
+    rendered = Gollum::Markup.new(page).render
+    assert_equal output, rendered 
+    assert_equal result, page.meta_data
+  end
+
+  test "metadata sanitation" do
+    content = "a\n\n<!-- ---\nfoo: <script>alert('');</script>\n-->\n\nb"
+    output = "<p>a</p>\n\n<p>b</p>"
+    result = {'foo'=>nil}
+
+    index = @wiki.repo.index
+    index.add("Bilbo-Baggins.md", content)
+    index.commit("Add metadata")
+
+    page = @wiki.page("Bilbo Baggins")
+    rendered = Gollum::Markup.new(page).render
+    assert_equal output, rendered 
+    assert_equal result, page.meta_data
   end
 
   #########################################################################
@@ -456,6 +577,24 @@ np.array([[2,2],[1,3]],np.float)
   test "strips javscript protocol urls" do
     content = "[Hack me](javascript:hacked=true)"
     output = "<p><a>Hackme</a></p>"
+    compare(content, output)
+  end
+
+  test "allows apt uri schemes" do
+    content = "[Hack me](apt:gettext)"
+    output = "<p><a href=\"apt:gettext\">Hackme</a></p>"
+    compare(content, output)
+  end
+
+  test "removes style blocks completely" do
+    content = "<style>body { color: red }</style>foobar"
+    output = "<p>foobar</p>"
+    compare(content, output)
+  end
+
+  test "removes script blocks completely" do
+    content = "<script>alert('hax');</script>foobar"
+    output = "<p>foobar</p>"
     compare(content, output)
   end
 
@@ -498,29 +637,30 @@ np.array([[2,2],[1,3]],np.float)
     compare(content, output, 'org')
   end
 
-  # test "id with prefix ok" do
-  #   content = "h2(example#wiki-foo). xxxx"
-  #   output = %(<h2 class="example" id="wiki-foo">xxxx</h2>)
-  #   compare(content, output, :textile)
-  # end
+  test "id with prefix ok" do
+    content = "h2(example#wiki-foo). xxxx"
+output = %(<h2 class="example" id="wiki-foo">xxxx<a class=\"anchor\" id=\"xxxx\" href=\"#xxxx\"></a></h2>)
+compare(content, output, :textile)
+end
 
-  # test "id prefix added" do
-  #   content = "h2(#foo). xxxx[1]\n\nfn1.footnote"
-  #   output = "<h2 id=\"wiki-foo\">xxxx" +
-  #            "<sup class=\"footnote\" id=\"wiki-fnr1\"><a href=\"#wiki-fn1\">1</a></sup></h2>" +
-  #            "\n<p class=\"footnote\" id=\"wiki-fn1\"><a href=\"#wiki-fnr1\"><sup>1</sup></a> footnote</p>"
-  #   compare(content, output, :textile)
-  # end
+  test "id prefix added" do
+    content = "h2(#foo). xxxx[1]\n\nfn1.footnote"
+    output = "<h2 id=\"wiki-foo\">xxxx" +
+             "<sup class=\"footnote\" id=\"wiki-fnr1\"><a href=\"#wiki-fn1\">1</a></sup>" +
+             "<a class=\"anchor\" id=\"xxxx1\" href=\"#xxxx1\"></a></h2>" +
+             "\n<p class=\"footnote\" id=\"wiki-fn1\"><a href=\"#wiki-fnr1\"><sup>1</sup></a> footnote</p>"
+    compare(content, output, :textile)
+  end
 
-  # test "name prefix added" do
-  #   content = "abc\n\n__TOC__\n\n==Header==\n\nblah"
-  #   compare content, '', :mediawiki, [
-  #     /id="wiki-toc"/,
-  #     /href="#wiki-Header"/,
-  #     /id="wiki-Header"/,
-  #     /name="wiki-Header"/
-  #   ]
-  # end
+  test "name prefix added" do
+    content = "abc\n\n__TOC__\n\n==Header==\n\nblah"
+    compare content, '', :mediawiki, [
+      /id="wiki-toc"/,
+      /href="#wiki-Header"/,
+      /id="wiki-Header"/,
+      /name="wiki-Header"/
+    ]
+  end
 
   #########################################################################
   #
@@ -530,14 +670,26 @@ np.array([[2,2],[1,3]],np.float)
 
   test "TeX block syntax" do
     content = 'a \[ a^2 \] b'
-    output = "<p>a<imgsrc=\"/_tex.png?type=block&data=YV4y\"alt=\"a^2\">b</p>"
+    output = "<p>a<imgwidth=\"15\"height=\"16\"style=\"vertical-align:-1px;\"src=\"/_tex.png?type=block&data=YV4y\"alt=\"a^2\"/>b</p>"
     compare(content, output, 'md')
   end
 
   test "TeX inline syntax" do
     content = 'a \( a^2 \) b'
-    output = "<p>a<imgsrc=\"/_tex.png?type=inline&data=YV4y\"alt=\"a^2\">b</p>"
+    output = "<p>a<imgwidth=\"15\"height=\"16\"style=\"vertical-align:-1px;\"src=\"/_tex.png?type=inline&data=YV4y\"alt=\"a^2\"/>b</p>"
     compare(content, output, 'md')
+  end
+
+  #########################################################################
+  # Asciidoc
+  #########################################################################
+
+  test "asciidoc header" do 
+    compare("= Book Title\n\n== Heading", '<div class="sect1"><h2 id="wiki-_heading">Heading<a class="anchor" id="Heading" href="#Heading"></a></h2><div class="sectionbody"></div></div>', 'asciidoc')
+  end
+
+  test "internal links with asciidoc" do 
+    compare("= Book Title\n\n[[anid]]\n== Heading", '<div class="sect1"><h2 id="wiki-anid">Heading<a class="anchor" id="Heading" href="#Heading"></a></h2><div class="sectionbody"></div></div>', 'asciidoc')
   end
 
   #########################################################################

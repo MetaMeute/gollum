@@ -158,7 +158,7 @@ module Gollum
     # Returns the String url_path
     def url_path
       path = if self.path.include?('/')
-        self.path.sub(/\/.+$/, '/')
+        self.path.sub(/\/[^\/]+$/, '/')
       else
         ''
       end
@@ -217,6 +217,14 @@ module Gollum
       markup_class.toc
     end
 
+    # Public: Embedded metadata.
+    #
+    # Returns Hash of metadata.
+    def meta_data()
+      formatted_data if markup_class.metadata == nil
+      markup_class.metadata
+    end
+
     # Public: The format of the page.
     #
     # Returns the Symbol format of the page. One of:
@@ -258,6 +266,13 @@ module Gollum
         @wiki.repo.log(@wiki.ref, @path, log_pagination_options(options))
       end
     end
+
+    # Public: The first 7 characters of the current version.
+    #
+    # Returns the first 7 characters of the current version.
+   def version_short
+     version.to_s[0,7]
+   end
 
     # Public: The header Page.
     #
@@ -357,9 +372,9 @@ module Gollum
     # version - The String version ID to find.
     #
     # Returns a Gollum::Page or nil if the page could not be found.
-    def find(name, version)
+    def find(name, version, dir = nil)
       map = @wiki.tree_map_for(version.to_s)
-      if page = find_page_in_tree(map, name)
+      if page = find_page_in_tree(map, name, dir)
         page.version    = version.is_a?(Grit::Commit) ?
           version : @wiki.commit_for(version)
         page.historical = page.version.to_s == version.to_s
