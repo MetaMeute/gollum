@@ -143,7 +143,7 @@ module Precious
     end
 
     get '/' do
-      redirect File.join(settings.wiki_options[:base_path].to_s, 'Home')
+      redirect File.join(settings.wiki_options[:base_path].to_s, 'FrontPage')
     end
 
     get '/login' do
