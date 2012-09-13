@@ -498,8 +498,12 @@ like Rack::Auth, OmniAuth, etc.
     Precious::App.set(:wiki_options, {:universal_toc => false})
     run Precious::App
 
-## Windows Filename Validation
+## WINDOWS FILENAME VALIDATION
 Note that filenames on windows must not contain any of the following characters `\ / : * ? " < > |`. See [this support article](http://support.microsoft.com/kb/177506) for details.
+
+## LIB.SO ERROR
+
+`Could not open library 'lib.so'` may be solved by installing `python-devel` on Fedora or `python-dev` on Ubuntu.
 
 ## CONTRIBUTE
 
@@ -529,8 +533,8 @@ your changes merged back into core is as follows:
     $ gem push gollum-X.Y.Z.gem
     
 ## BUILDING THE GEM FROM MASTER
-    $ gem uninstall -aix gollum
+    $ gem uninstall -aIx gollum
     $ git clone https://github.com/github/gollum.git
     $ cd gollum
     gollum$ rake build
-    gollum$ gem install pkg/gollum*.gem
+    gollum$ gem install --no-ri --no-rdoc pkg/gollum*.gem

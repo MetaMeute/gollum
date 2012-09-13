@@ -87,14 +87,15 @@ module Gollum
     def process_headers(doc)
       toc = nil
       doc.css('h1,h2,h3,h4,h5,h6').each do |h|
-        id = CGI::escape(h.content.gsub(' ','-'))
+        id = encodeURIComponent(h.content.gsub(' ','-'))
         level = h.name.gsub(/[hH]/,'').to_i
 
         # Add anchors
         anchor = Nokogiri::XML::Node.new('a', doc)
         anchor['class'] = 'anchor'
         anchor['id'] = id
-        anchor['href'] = '#' + id
+        # % -> %25 so anchors work on Firefox. See issue #475
+        anchor['href'] = '#' + id.gsub('%', '%25')
         h.add_child(anchor)
 
         # Build TOC
@@ -112,7 +113,8 @@ module Gollum
           tail_level -= 1
         end
         node = Nokogiri::XML::Node.new('li', doc)
-        node.add_child("<a href='##{id}'>#{h.content}</a>")
+        # % -> %25 so anchors work on Firefox. See issue #475
+        node.add_child("<a href='##{id.gsub('%', '%25')}'>#{h.content}</a>")
         tail.add_child(node)
       end
       toc = toc.to_xhtml if toc != nil
@@ -153,23 +155,7 @@ module Gollum
     def process_tex(data)
       @texmap.each do |id, spec|
         type, tex = *spec
-
-        # Obtain the formula with parameters
-        out = nil
-        begin 
-          width, height, align, base64 = Gollum::Tex.render_formula(tex, true)
-
-          # TODO: Should we load the binary inside the html?
-          #out = %{<img width="#{width}" height="#{height}" style="vertical-align: #{align}px;" src="data:image/png;base64,\n#{base64}" alt="#{CGI.escapeHTML(tex)}" />}
-
-          # Use the alignment values from the formula rendering but still use the call to '_tex.png'. Although it will call render_formula()
-          # again, it will use the already cached formula and it might have some advantages from the point of view of browser caching (really not sure here).
-          out = %{<img width="#{width}" height="#{height}" style="vertical-align: #{align}px;" src="#{::File.join(@wiki.base_path, '_tex.png')}?type=#{type}&data=#{Base64.encode64(tex).chomp}" alt="#{CGI.escapeHTML(tex)}" />}
-        rescue # In case of error
-          out = CGI.escapeHTML(tex)
-        end
-        
-        data.gsub!(id, out)
+        data.gsub!(id, Gollum::Tex.to_html(tex, type))
       end
       data
     end
@@ -226,7 +212,7 @@ module Gollum
         if is_preformatted?(data, id)
           data.gsub!(id, "[[#{tag}]]")
         else
-          data.gsub!(id, process_tag(tag))
+          data.gsub!(id, process_tag(tag).gsub('%2F', '/'))
         end
       end
       data
@@ -439,13 +425,23 @@ module Gollum
     # Find a page from a given cname.  If the page has an anchor (#) and has
     # no match, strip the anchor and try again.
     #
-    # cname - The String canonical page name.
+    # cname - The String canonical page name including path.
     #
     # Returns a Gollum::Page instance if a page is found, or an Array of
     # [Gollum::Page, String extra] if a page without the extra anchor data
     # is found.
     def find_page_from_name(cname)
-      if page = @wiki.page(cname)
+      slash = cname.rindex('/')
+
+      unless slash.nil?
+        name = cname[slash+1..-1]
+        path = cname[0..slash]
+        page = @wiki.paged(name, path)
+      else
+        page = @wiki.paged(cname, '/')
+      end
+
+      if page
         return page
       end
       if pos = cname.index('#')
@@ -579,12 +575,18 @@ module Gollum
     #########################################################################
 
     # Extract metadata for data and build metadata table. Metadata
-    # is content found between `<!-- ---` and `-->` markers, and must
+    # is content found between markers, and must
     # be a valid YAML mapping.
+    #
+    # Because ri and ruby 1.8.7 are awesome, the markers can't
+    # be included in this documentation without triggering
+    # `Unhandled special: Special: type=17`
+    # Please read the source code for the exact markers
     #
     # Returns the String of formatted data with metadata removed.
     def extract_metadata(data)
       @metadata ||= {}
+      # The markers are `<!-- ---` and `-->`
       data.gsub(/\<\!--+\s+---(.*?)--+\>/m) do
         yaml = @wiki.sanitizer.clean($1)
         hash = YAML.load(yaml)
