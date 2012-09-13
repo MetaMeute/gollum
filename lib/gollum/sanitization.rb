@@ -16,13 +16,14 @@ module Gollum
       'select', 'small', 'span', 'strike', 'strong', 'sub',
       'sup', 'table', 'tbody', 'td', 'textarea', 'tfoot', 'th',
       'thead', 'tr', 'tt', 'u', 'ul', 'var', 'iframe', 'audio',
-      'video'
+      'video', 'source'
     ].freeze
 
     # Default whitelisted attributes.
     ATTRIBUTES = {
       'a'   => ['href'],
       'img' => ['src'],
+      'audio' => ['controls'],
       'iframe' => ['src', 'frameborder', 'allowfullscreen'],
       :all  => ['abbr', 'accept', 'accept-charset',
                 'accesskey', 'action', 'align', 'alt', 'axis',
