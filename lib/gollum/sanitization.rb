@@ -24,6 +24,7 @@ module Gollum
       'a'   => ['href'],
       'img' => ['src'],
       'audio' => ['controls'],
+      'source' => ['source'],
       'iframe' => ['src', 'frameborder', 'allowfullscreen'],
       :all  => ['abbr', 'accept', 'accept-charset',
                 'accesskey', 'action', 'align', 'alt', 'axis',
